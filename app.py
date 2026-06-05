@@ -1,18 +1,27 @@
+```python
 import streamlit as st
 import numpy as np
 import pandas as pd
 import pickle
 import yfinance as yf
-import tensorflow as tf
+import os
 
-from tensorflow.keras.layers import (
-    Dense,
-    LSTM,
-    Dropout,
-    MultiHeadAttention,
-    LayerNormalization,
-    GlobalAveragePooling1D
-)
+# ---------------------------
+# SAFE TENSORFLOW IMPORT
+# ---------------------------
+try:
+    import tensorflow as tf
+    from tensorflow.keras.layers import (
+        Dense,
+        LSTM,
+        Dropout,
+        MultiHeadAttention,
+        LayerNormalization,
+        GlobalAveragePooling1D
+    )
+except Exception as e:
+    st.error(f"TensorFlow Import Error: {e}")
+    st.stop()
 
 # ---------------------------
 # PAGE CONFIG
@@ -23,11 +32,16 @@ st.set_page_config(
     layout="wide"
 )
 
+# ---------------------------
+# TITLE
+# ---------------------------
 st.title("📈 AI Stock Price Predictor")
-st.markdown("Predict the next day's stock closing price using Deep Learning")
+st.markdown(
+    "Predict the next day's stock closing price using Deep Learning"
+)
 
 # ---------------------------
-# STOCKS
+# STOCK LIST
 # ---------------------------
 STOCKS = {
     "AAPL": "Apple",
@@ -43,7 +57,7 @@ STOCKS = {
 }
 
 # ---------------------------
-# INDICATORS
+# TECHNICAL INDICATORS
 # ---------------------------
 def add_indicators(data):
 
@@ -110,102 +124,117 @@ def build_model(input_shape):
 # ---------------------------
 # SIDEBAR
 # ---------------------------
-st.sidebar.header("Settings")
+st.sidebar.header("⚙️ Settings")
 
 ticker = st.sidebar.selectbox(
     "Select Stock",
     list(STOCKS.keys())
 )
 
+st.sidebar.info(
+    f"Selected Company: {STOCKS[ticker]}"
+)
+
 # ---------------------------
-# PREDICT BUTTON
+# PREDICTION BUTTON
 # ---------------------------
-if st.button("Predict Next Day Price"):
+if st.button("🚀 Predict Next Day Price"):
 
-    with st.spinner("Loading model and fetching data..."):
+    try:
 
-        # Load scaler
-        scaler = pickle.load(
-            open(f"scalers/{ticker}_scaler.pkl", "rb")
-        )
+        with st.spinner("Loading model and fetching stock data..."):
 
-        # Build model
-        model = build_model((60, 7))
+            scaler_path = f"scalers/{ticker}_scaler.pkl"
+            model_path = f"models/{ticker}_model.weights.h5"
 
-        # Load weights
-        model.load_weights(
-            f"models/{ticker}_model.weights.h5"
-        )
+            if not os.path.exists(scaler_path):
+                st.error(f"Scaler file not found: {scaler_path}")
+                st.stop()
 
-        # Download latest stock data
-        data = yf.download(
-            ticker,
-            period="6mo",
-            interval="1d",
-            progress=False
-        )
+            if not os.path.exists(model_path):
+                st.error(f"Model file not found: {model_path}")
+                st.stop()
 
-        data.columns = [
-            col[0] if isinstance(col, tuple) else col
-            for col in data.columns
-        ]
+            with open(scaler_path, "rb") as f:
+                scaler = pickle.load(f)
 
-        data = add_indicators(data)
+            model = build_model((60, 7))
+            model.load_weights(model_path)
 
-        FEATURES = [
-            "Close",
-            "Volume",
-            "SMA20",
-            "EMA20",
-            "RSI",
-            "Upper",
-            "Lower"
-        ]
+            data = yf.download(
+                ticker,
+                period="6mo",
+                interval="1d",
+                progress=False
+            )
 
-        latest = data[FEATURES].tail(60)
+            data.columns = [
+                col[0] if isinstance(col, tuple) else col
+                for col in data.columns
+            ]
 
-        scaled = scaler.transform(latest)
+            data = add_indicators(data)
 
-        X = np.array([scaled])
+            FEATURES = [
+                "Close",
+                "Volume",
+                "SMA20",
+                "EMA20",
+                "RSI",
+                "Upper",
+                "Lower"
+            ]
 
-        prediction = model.predict(X, verbose=0)
+            latest = data[FEATURES].tail(60)
 
-        close_min = scaler.data_min_[0]
-        close_max = scaler.data_max_[0]
+            scaled = scaler.transform(latest)
 
-        predicted_price = (
-            prediction[0][0] *
-            (close_max - close_min)
-            + close_min
-        )
+            X = np.array([scaled])
 
-        current_price = float(
-            data["Close"].iloc[-1]
-        )
+            prediction = model.predict(
+                X,
+                verbose=0
+            )
 
-    st.success("Prediction Complete!")
+            close_min = scaler.data_min_[0]
+            close_max = scaler.data_max_[0]
 
-    col1, col2 = st.columns(2)
+            predicted_price = (
+                prediction[0][0]
+                * (close_max - close_min)
+                + close_min
+            )
 
-    with col1:
-        st.metric(
-            "Current Price",
-            f"${current_price:.2f}"
-        )
+            current_price = float(
+                data["Close"].iloc[-1]
+            )
 
-    with col2:
-        st.metric(
-            "Predicted Next Day Price",
-            f"${predicted_price:.2f}"
-        )
+        st.success("Prediction Complete!")
 
-    st.subheader("Recent Closing Prices")
+        col1, col2 = st.columns(2)
 
-    chart_data = pd.DataFrame({
-        "Close": data["Close"].tail(90)
-    })
+        with col1:
+            st.metric(
+                "Current Price",
+                f"${current_price:.2f}"
+            )
 
-    st.line_chart(chart_data)
+        with col2:
+            st.metric(
+                "Predicted Next Day Price",
+                f"${predicted_price:.2f}"
+            )
+
+        st.subheader("📊 Recent Closing Prices")
+
+        chart_data = pd.DataFrame({
+            "Close": data["Close"].tail(90)
+        })
+
+        st.line_chart(chart_data)
+
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
 
 # ---------------------------
 # FOOTER
@@ -214,3 +243,5 @@ st.markdown("---")
 st.markdown(
     "Developed by **Prasanna99-rgb** 🚀"
 )
+```
+
